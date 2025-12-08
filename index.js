@@ -188,6 +188,67 @@ async function run() {
       }
     });
 
+    app.get("/manage-users", verifyFirebase, async (req, res) => {
+      try {
+        const { email } = req.user;
+        const userData = await usersCollection.findOne({ email });
+
+        if (userData.role !== "admin") {
+          return res.status(403).send({
+            success: false,
+            message: "Only admins are allowed to view users.",
+          });
+        }
+
+        const users = await usersCollection.find().toArray();
+        return res.status(200).send(users);
+      } catch (error) {
+        res.status(500).send({ error: "Internal server error" });
+      }
+    });
+
+    app.patch("/manage-users/:id", verifyFirebase, async (req, res) => {
+      try {
+        const { email } = req.user;
+
+        const userData = await usersCollection.findOne({ email });
+
+        if (userData.role !== "admin") {
+          return res.status(403).send({
+            success: false,
+            message: "Only admins are allowed to edit any tickets.",
+          });
+        }
+        const { id } = req.params;
+        const { action } = req.body;
+        const data = { role: action };
+        const user = await usersCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: data }
+        );
+
+        if (user.matchedCount === 0) {
+          return res
+            .status(404)
+            .send({ success: false, message: "Ticket not found." });
+        }
+
+        if (user.modifiedCount === 0) {
+          return res
+            .status(200)
+            .send({ success: true, message: "No changes were made." });
+        }
+
+        return res
+          .status(200)
+          .send({ success: true, message: "User updated successfully." });
+      } catch (error) {
+        console.log(error);
+
+        res.status(500).send({ error: "Internal server error" });
+      }
+    });
+
     app.patch("/manage-tickets/:id", verifyFirebase, async (req, res) => {
       try {
         const { email } = req.user;
