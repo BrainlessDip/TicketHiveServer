@@ -32,11 +32,66 @@ const client = new MongoClient(uri, {
   },
 });
 
+const verifyFirebase = async (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res
+        .status(401)
+        .json({ error: "Missing or invalid authorization header" });
+    }
+
+    const idToken = authHeader.split(" ")[1];
+    try {
+      const user = await admin.auth().verifyIdToken(idToken);
+      req.user = user;
+    } catch (error) {
+      return res.status(401).json({ error: error.message });
+    }
+    next();
+  } catch (error) {
+    console.error("Error verifying Firebase token:", error);
+    res.status(403).json({ error: "Unauthorized or invalid token" });
+  }
+};
+
 async function run() {
   try {
     await client.connect();
     const db = client.db("tickethive_db");
     const usersCollection = db.collection("users");
+
+    app.post("/register", async (req, res) => {
+      try {
+        const { name, email } = req.body;
+
+        const existingUser = await usersCollection.findOne({ email });
+
+        if (existingUser) {
+          return res.send({
+            success: false,
+            message: "User already exists",
+          });
+        }
+
+        const data = {
+          name,
+          email,
+          role: "user",
+        };
+
+        await usersCollection.insertOne(data);
+
+        res.status(201).send({
+          success: true,
+          message: "Registration successful!",
+        });
+      } catch (error) {
+        res.status(500).send({ error: "Internal server error" });
+      }
+    });
+
     console.log("Database connected");
   } catch (err) {
     console.error(err);
