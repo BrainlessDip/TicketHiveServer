@@ -146,7 +146,7 @@ async function run() {
 
     app.get("/my-tickets", verifyFirebase, async (req, res) => {
       try {
-        const { email, displayName } = req.user;
+        const { email } = req.user;
         const userData = await usersCollection.findOne({ email });
 
         if (userData.role !== "vendor") {
@@ -162,6 +162,105 @@ async function run() {
           .toArray();
         return res.status(200).send(tickets);
       } catch (error) {
+        res.status(500).send({ error: "Internal server error" });
+      }
+    });
+
+    app.get("/my-tickets/:id", verifyFirebase, async (req, res) => {
+      try {
+        const { email } = req.user;
+        const { id } = req.params;
+        const userData = await usersCollection.findOne({ email });
+
+        if (userData.role !== "vendor") {
+          return res.status(403).send({
+            success: false,
+            message: "Only vendors are allowed to view ticket",
+          });
+        }
+
+        const ticket = await ticketsCollection.findOne({
+          _id: new ObjectId(id),
+          email: email,
+        });
+        return res.status(200).send(ticket);
+      } catch (error) {
+        res.status(500).send({ error: "Internal server error" });
+      }
+    });
+
+    app.patch("/my-tickets/:id", verifyFirebase, async (req, res) => {
+      try {
+        const { email } = req.user;
+        const { id } = req.params;
+        const data = req.body;
+        const userData = await usersCollection.findOne({ email });
+
+        if (userData.role !== "vendor") {
+          return res.status(403).send({
+            success: false,
+            message: "Only vendors are allowed to edit ticket",
+          });
+        }
+
+        const ticket = await ticketsCollection.updateOne(
+          { _id: new ObjectId(id), email: email },
+          { $set: data }
+        );
+
+        if (ticket.matchedCount === 0) {
+          return res
+            .status(404)
+            .send({ success: false, message: "Ticket not found." });
+        }
+
+        if (ticket.modifiedCount === 0) {
+          return res
+            .status(200)
+            .send({ success: true, message: "No changes were made." });
+        }
+
+        return res
+          .status(200)
+          .send({ success: true, message: "Ticket updated successfully." });
+      } catch (error) {
+        res.status(500).send({ error: "Internal server error" });
+      }
+    });
+
+    app.delete("/my-tickets/:id", verifyFirebase, async (req, res) => {
+      try {
+        const { email } = req.user;
+        const userData = await usersCollection.findOne({ email });
+        const { id } = req.params;
+
+        if (userData.role !== "vendor") {
+          return res.status(403).send({
+            success: false,
+            message: "Only vendors are allowed to delete tickets.",
+          });
+        }
+
+        const result = await ticketsCollection.deleteOne({
+          _id: new ObjectId(id),
+          email: email,
+        });
+
+        if (result.deletedCount === 0) {
+          return res.status(404).send({
+            success: false,
+            message:
+              "Ticket not found or you do not have permission to delete it.",
+          });
+        }
+
+        res.status(200).send({
+          success: true,
+          message: "Ticket deleted successfully",
+        });
+      } catch (error) {
+        console.log(error);
+
         res.status(500).send({ error: "Internal server error" });
       }
     });
