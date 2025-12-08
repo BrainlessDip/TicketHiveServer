@@ -166,6 +166,70 @@ async function run() {
       }
     });
 
+    app.get("/manage-tickets", verifyFirebase, async (req, res) => {
+      try {
+        const { email } = req.user;
+        const userData = await usersCollection.findOne({ email });
+
+        if (userData.role !== "admin") {
+          return res.status(403).send({
+            success: false,
+            message: "Only admins are allowed to view all tickets.",
+          });
+        }
+
+        const tickets = await ticketsCollection
+          .find()
+          .sort({ createdAt: -1 })
+          .toArray();
+        return res.status(200).send(tickets);
+      } catch (error) {
+        res.status(500).send({ error: "Internal server error" });
+      }
+    });
+
+    app.patch("/manage-tickets/:id", verifyFirebase, async (req, res) => {
+      try {
+        const { email } = req.user;
+
+        const userData = await usersCollection.findOne({ email });
+
+        if (userData.role !== "admin") {
+          return res.status(403).send({
+            success: false,
+            message: "Only admins are allowed to edit any tickets.",
+          });
+        }
+        const { id } = req.params;
+        const { action } = req.body;
+        const data = { verificationStatus: action };
+        const ticket = await ticketsCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: data }
+        );
+
+        if (ticket.matchedCount === 0) {
+          return res
+            .status(404)
+            .send({ success: false, message: "Ticket not found." });
+        }
+
+        if (ticket.modifiedCount === 0) {
+          return res
+            .status(200)
+            .send({ success: true, message: "No changes were made." });
+        }
+
+        return res
+          .status(200)
+          .send({ success: true, message: "Ticket updated successfully." });
+      } catch (error) {
+        console.log(error);
+
+        res.status(500).send({ error: "Internal server error" });
+      }
+    });
+
     app.get("/my-tickets/:id", verifyFirebase, async (req, res) => {
       try {
         const { email } = req.user;
