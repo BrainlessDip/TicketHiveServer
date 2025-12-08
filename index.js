@@ -61,6 +61,7 @@ async function run() {
     await client.connect();
     const db = client.db("tickethive_db");
     const usersCollection = db.collection("users");
+    const ticketsCollection = db.collection("tickets");
 
     app.post("/register", async (req, res) => {
       try {
@@ -87,6 +88,90 @@ async function run() {
           success: true,
           message: "Registration successful!",
         });
+      } catch (error) {
+        res.status(500).send({ error: "Internal server error" });
+      }
+    });
+
+    app.post("/add-ticket", verifyFirebase, async (req, res) => {
+      try {
+        const { email, displayName } = req.user;
+        const userData = await usersCollection.findOne({ email });
+
+        if (userData.role !== "vendor") {
+          return res.status(403).send({
+            success: false,
+            message: "Only vendors are allowed to add tickets.",
+          });
+        }
+
+        const {
+          title,
+          from,
+          to,
+          transportType,
+          pricePerUnit,
+          quantity,
+          departure,
+          perks,
+          imageUrl,
+        } = req.body;
+
+        const data = {
+          email,
+          displayName,
+          title,
+          from,
+          to,
+          transportType,
+          pricePerUnit,
+          quantity,
+          departure,
+          perks,
+          imageUrl,
+          createdAt: new Date(),
+          verificationStatus: "pending",
+        };
+
+        await ticketsCollection.insertOne(data);
+
+        res.status(201).send({
+          success: true,
+          message: "Ticket added successfully!",
+        });
+      } catch (error) {
+        res.status(500).send({ error: "Internal server error" });
+      }
+    });
+
+    app.get("/my-tickets", verifyFirebase, async (req, res) => {
+      try {
+        const { email, displayName } = req.user;
+        const userData = await usersCollection.findOne({ email });
+
+        if (userData.role !== "vendor") {
+          return res.status(403).send({
+            success: false,
+            message: "Only vendors are allowed to add tickets.",
+          });
+        }
+
+        const tickets = await ticketsCollection
+          .find({ email: email })
+          .sort({ createdAt: -1 })
+          .toArray();
+        return res.status(200).send(tickets);
+      } catch (error) {
+        res.status(500).send({ error: "Internal server error" });
+      }
+    });
+
+    app.get("/profile", verifyFirebase, async (req, res) => {
+      try {
+        const User = await usersCollection.findOne({ email: req.user.email });
+        if (User) {
+          return res.send(User);
+        }
       } catch (error) {
         res.status(500).send({ error: "Internal server error" });
       }
