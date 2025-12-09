@@ -556,6 +556,52 @@ async function run() {
       res.send({ url: session.url });
     });
 
+    app.patch("/payment-status", async (req, res) => {
+      try {
+        const { sessionId } = req.query;
+
+        const session = await stripe.checkout.sessions.retrieve(sessionId);
+
+        const isSuccess = session.payment_status === "paid";
+
+        if (isSuccess) {
+          const update = { $set: { status: "paid" } };
+          const result = await bookingsCollection.updateOne(
+            { _id: new ObjectId(session.metadata.bookingId) },
+            update
+          );
+
+          if (result.modifiedCount) {
+            return res.send({
+              success: true,
+              message: "Payment successful",
+            });
+          } else {
+            return res.send({
+              success: false,
+              message: "Payment already verified",
+            });
+          }
+        }
+
+        const filter = { sessionId: session.id };
+        const update = { $set: { paymentStatus: "failed" } };
+
+        const result = await paymentCollection.updateOne(filter, update);
+
+        return res.send({
+          success: false,
+          message: "Payment not completed",
+        });
+      } catch (error) {
+        console.error("Payment check error:", error);
+        return res.status(500).send({
+          message: "Internal server error",
+          error: error.message,
+        });
+      }
+    });
+
     app.get("/profile", verifyFirebase, async (req, res) => {
       try {
         const User = await usersCollection.findOne({ email: req.user.email });
