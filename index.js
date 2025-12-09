@@ -208,19 +208,25 @@ async function run() {
       }
     });
 
-    app.get("/advertise-tickets", verifyFirebase, async (req, res) => {
+    app.get("/advertise-tickets", async (req, res) => {
       try {
-        const { email } = req.user;
-        const userData = await usersCollection.findOne({ email });
+        const tickets = await ticketsCollection
+          .find({ advertiseStatus: "show" })
+          .sort({ createdAt: -1 })
+          .toArray();
+        return res.status(200).send(tickets);
+      } catch (error) {
+        res.status(500).send({ error: "Internal server error" });
+      }
+    });
 
-        if (userData.role !== "admin") {
-          return res.status(403).send({
-            success: false,
-            message: "Only admins are allowed to view advertise tickets",
-          });
-        }
-
-        const tickets = await ticketsCollection.find().toArray();
+    app.get("/recent-tickets", async (req, res) => {
+      try {
+        const tickets = await ticketsCollection
+          .find()
+          .sort({ createdAt: -1 })
+          .limit(8)
+          .toArray();
         return res.status(200).send(tickets);
       } catch (error) {
         res.status(500).send({ error: "Internal server error" });
@@ -230,6 +236,7 @@ async function run() {
     app.patch("/advertise-tickets/:id", verifyFirebase, async (req, res) => {
       try {
         const { email } = req.user;
+        const { action } = req.body;
 
         const userData = await usersCollection.findOne({ email });
 
@@ -239,8 +246,25 @@ async function run() {
             message: "Only admins are allowed to edit any tickets.",
           });
         }
+
+        if (action === "show") {
+          const result = await ticketsCollection
+            .aggregate([
+              { $match: { advertiseStatus: "show" } },
+              { $count: "showCount" },
+            ])
+            .toArray();
+          const showCount = result[0]?.showCount || 0;
+
+          if (showCount >= 6) {
+            return res.status(200).json({
+              success: false,
+              message: "You can't show more than 1 ticket at a time.",
+            });
+          }
+        }
+
         const { id } = req.params;
-        const { action } = req.body;
         const data = { advertiseStatus: action };
         const user = await ticketsCollection.updateOne(
           { _id: new ObjectId(id) },
@@ -356,21 +380,12 @@ async function run() {
 
     app.get("/my-tickets/:id", verifyFirebase, async (req, res) => {
       try {
-        const { email } = req.user;
         const { id } = req.params;
-        const userData = await usersCollection.findOne({ email });
-
-        if (userData.role !== "vendor") {
-          return res.status(403).send({
-            success: false,
-            message: "Only vendors are allowed to view ticket",
-          });
-        }
 
         const ticket = await ticketsCollection.findOne({
           _id: new ObjectId(id),
-          email: email,
         });
+
         return res.status(200).send(ticket);
       } catch (error) {
         res.status(500).send({ error: "Internal server error" });
