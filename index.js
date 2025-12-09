@@ -6,7 +6,7 @@ require("dotenv").config();
 const Stripe = require("stripe");
 const stripe = Stripe(process.env.STRIPE_KEY);
 const port = process.env.PORT || 3000;
-const DOMAIN = "http://localhost:5173";
+const YOUR_DOMAIN = "http://localhost:5173";
 
 const decoded = Buffer.from(
   process.env.FIREBASE_SERVICE_KEY,
@@ -62,6 +62,7 @@ async function run() {
     const db = client.db("tickethive_db");
     const usersCollection = db.collection("users");
     const ticketsCollection = db.collection("tickets");
+    const bookingsCollection = db.collection("bookings");
 
     app.post("/register", async (req, res) => {
       try {
@@ -189,6 +190,18 @@ async function run() {
       }
     });
 
+    app.get("/my-booked-tickets", verifyFirebase, async (req, res) => {
+      try {
+        const tickets = await bookingsCollection
+          .find({ email: req.user.email })
+          .sort({ createdAt: -1 })
+          .toArray();
+        return res.status(200).send(tickets);
+      } catch (error) {
+        res.status(500).send({ error: "Internal server error" });
+      }
+    });
+
     app.get("/manage-users", verifyFirebase, async (req, res) => {
       try {
         const { email } = req.user;
@@ -211,7 +224,7 @@ async function run() {
     app.get("/advertise-tickets", async (req, res) => {
       try {
         const tickets = await ticketsCollection
-          .find({ advertiseStatus: "show" })
+          .find({ verificationStatus: "approved" })
           .sort({ createdAt: -1 })
           .toArray();
         return res.status(200).send(tickets);
@@ -466,6 +479,81 @@ async function run() {
 
         res.status(500).send({ error: "Internal server error" });
       }
+    });
+
+    app.post("/submit-booking", verifyFirebase, async (req, res) => {
+      try {
+        const { email } = req.user;
+        const { ticketId, quantity } = req.body;
+
+        const ticket = await ticketsCollection.findOne({
+          _id: new ObjectId(ticketId),
+        });
+
+        await bookingsCollection.insertOne({
+          imageUrl: ticket.imageUrl,
+          title: ticket.title,
+          from: ticket.from,
+          to: ticket.to,
+          transportType: ticket.transportType,
+          pricePerUnit: ticket.pricePerUnit,
+          departure: ticket.departure,
+          email,
+          ticketId,
+          quantity,
+          status: "pending",
+          createdAt: new Date(),
+        });
+
+        res.status(201).send({
+          success: true,
+          message: "Booking successful!",
+        });
+      } catch (error) {
+        res.status(500).send({ error: "Internal server error" });
+      }
+    });
+
+    app.post("/create-checkout-session", async (req, res) => {
+      const { ticketId, bookingId } = req.body;
+
+      const ticketData = await ticketsCollection.findOne({
+        _id: new ObjectId(ticketId),
+      });
+
+      const bookingData = await bookingsCollection.findOne({
+        _id: new ObjectId(bookingId),
+      });
+
+      const amount =
+        parseInt(ticketData.pricePerUnit) *
+        parseInt(bookingData.quantity) *
+        100;
+
+      const session = await stripe.checkout.sessions.create({
+        line_items: [
+          {
+            price_data: {
+              currency: "USD",
+              product_data: {
+                name: ticketData.title || "Ticket Payment",
+              },
+              unit_amount: Math.round(Number(amount)),
+            },
+            quantity: 1,
+          },
+        ],
+        metadata: {
+          ticketId: String(ticketId._id),
+          bookingId: String(bookingData._id),
+        },
+        mode: "payment",
+        customer_email: bookingData.email,
+        success_url: `${YOUR_DOMAIN}/dashboard/payment/${bookingData._id}?type=success&sessionId={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${YOUR_DOMAIN}/dashboard/payment/${bookingData._id}?type=cancel`,
+      });
+
+      res.send({ url: session.url });
     });
 
     app.get("/profile", verifyFirebase, async (req, res) => {
