@@ -63,6 +63,7 @@ async function run() {
     const usersCollection = db.collection("users");
     const ticketsCollection = db.collection("tickets");
     const bookingsCollection = db.collection("bookings");
+    const transactionsCollection = db.collection("transactions");
 
     app.post("/register", async (req, res) => {
       try {
@@ -256,7 +257,7 @@ async function run() {
       }
     });
 
-    app.get("/recent-tickets", async (req, res) => {
+    app.get("/recent-tickets", verifyFirebase, async (req, res) => {
       try {
         const tickets = await ticketsCollection
           .find()
@@ -264,6 +265,29 @@ async function run() {
           .limit(8)
           .toArray();
         return res.status(200).send(tickets);
+      } catch (error) {
+        res.status(500).send({ error: "Internal server error" });
+      }
+    });
+
+    app.get("/transactions-history", verifyFirebase, async (req, res) => {
+      const { email } = req.user;
+
+      const userData = await usersCollection.findOne({ email });
+
+      if (userData.role !== "user") {
+        return res.status(403).send({
+          success: false,
+          message: "Only users are allowed to view transactions",
+        });
+      }
+
+      try {
+        const payments = await transactionsCollection
+          .find()
+          .sort({ createdAt: -1 })
+          .toArray();
+        return res.status(200).send(payments);
       } catch (error) {
         res.status(500).send({ error: "Internal server error" });
       }
@@ -636,6 +660,7 @@ async function run() {
           ticketId: String(ticketData._id),
           bookingId: String(bookingData._id),
           quantity: bookingData.quantity,
+          title: ticketData.title,
         },
         mode: "payment",
         customer_email: bookingData.email,
@@ -651,7 +676,7 @@ async function run() {
         const { sessionId } = req.query;
 
         const session = await stripe.checkout.sessions.retrieve(sessionId);
-
+        console.log(session);
         const isSuccess = session.payment_status === "paid";
 
         if (isSuccess) {
@@ -660,13 +685,18 @@ async function run() {
             { _id: new ObjectId(session.metadata.bookingId) },
             update
           );
-          console.log(session.metadata);
 
           if (result.modifiedCount) {
             await ticketsCollection.updateOne(
               { _id: new ObjectId(session.metadata.ticketId) },
               { $inc: { quantity: -parseInt(session.metadata.quantity) } }
             );
+            await transactionsCollection.insertOne({
+              ...session.metadata,
+              createdAt: new Date(),
+              id: session.id,
+              amount_total: Number(session.amount_total / 100),
+            });
             return res.send({
               success: true,
               message: "Payment successful",
