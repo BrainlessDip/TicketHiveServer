@@ -260,11 +260,80 @@ async function run() {
     app.get("/recent-tickets", verifyFirebase, async (req, res) => {
       try {
         const tickets = await ticketsCollection
-          .find()
+          .find({ verificationStatus: "approved" })
           .sort({ createdAt: -1 })
           .limit(8)
           .toArray();
         return res.status(200).send(tickets);
+      } catch (error) {
+        res.status(500).send({ error: "Internal server error" });
+      }
+    });
+
+    app.get("/revenue-overview", verifyFirebase, async (req, res) => {
+      const { email } = req.user;
+
+      const userData = await usersCollection.findOne({ email });
+
+      if (userData.role !== "vendor") {
+        return res.status(403).send({
+          success: false,
+          message: "Only vendor are allowed to view revenue overview",
+        });
+      }
+
+      try {
+        const paidBookings = await bookingsCollection
+          .aggregate([
+            {
+              $match: {
+                status: "paid",
+                vendorEmail: email,
+              },
+            },
+            {
+              $group: {
+                _id: null,
+                total_tickets_sold: { $sum: "$quantity" },
+                total_revenue: {
+                  $sum: {
+                    $multiply: ["$pricePerUnit", "$quantity"],
+                  },
+                },
+              },
+            },
+          ])
+          .toArray();
+
+        const allTickets = await ticketsCollection
+          .aggregate([
+            {
+              $match: {
+                verificationStatus: "approved",
+                email,
+              },
+            },
+            {
+              $group: {
+                _id: null,
+                total_add: { $sum: 1 },
+              },
+            },
+          ])
+          .toArray();
+
+        const { total_tickets_sold = 0, total_revenue = 0 } =
+          paidBookings[0] || {};
+        console.log(allTickets);
+
+        return res.status(200).send([
+          { name: "Total Revenue", value: total_revenue },
+          { name: "Total Tickets Sold", value: total_tickets_sold },
+          {
+            name: "Total Tickets Added",
+            value: allTickets?.[0]?.total_add || 0,
+          },
+        ]);
       } catch (error) {
         res.status(500).send({ error: "Internal server error" });
       }
