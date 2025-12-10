@@ -257,11 +257,23 @@ async function run() {
       }
     });
 
-    app.get("/recent-tickets", verifyFirebase, async (req, res) => {
+    app.get("/recent-tickets", async (req, res) => {
       try {
         const tickets = await ticketsCollection
           .find({ verificationStatus: "approved" })
           .sort({ createdAt: -1 })
+          .limit(8)
+          .toArray();
+        return res.status(200).send(tickets);
+      } catch (error) {
+        res.status(500).send({ error: "Internal server error" });
+      }
+    });
+
+    app.get("/all-tickets", async (req, res) => {
+      try {
+        const tickets = await ticketsCollection
+          .find({ verificationStatus: "approved" })
           .limit(8)
           .toArray();
         return res.status(200).send(tickets);
