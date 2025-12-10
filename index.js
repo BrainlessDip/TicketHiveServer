@@ -224,6 +224,29 @@ async function run() {
     app.get("/advertise-tickets", async (req, res) => {
       try {
         const tickets = await ticketsCollection
+          .find({ advertiseStatus: "show" })
+          .sort({ createdAt: -1 })
+          .toArray();
+        return res.status(200).send(tickets);
+      } catch (error) {
+        res.status(500).send({ error: "Internal server error" });
+      }
+    });
+
+    app.get("/advertise-tickets-admin", verifyFirebase, async (req, res) => {
+      const { email } = req.user;
+
+      const userData = await usersCollection.findOne({ email });
+
+      if (userData.role !== "admin") {
+        return res.status(403).send({
+          success: false,
+          message: "Only admins are allowed to view advertise tickets.",
+        });
+      }
+
+      try {
+        const tickets = await ticketsCollection
           .find({ verificationStatus: "approved" })
           .sort({ createdAt: -1 })
           .toArray();
@@ -481,6 +504,71 @@ async function run() {
       }
     });
 
+    app.patch("/requested-bookings/:id", verifyFirebase, async (req, res) => {
+      try {
+        const { email } = req.user;
+
+        const userData = await usersCollection.findOne({ email });
+
+        if (userData.role !== "vendor") {
+          return res.status(403).send({
+            success: false,
+            message: "Only vendor are allowed to edit any tickets.",
+          });
+        }
+
+        const { id } = req.params;
+        const { action } = req.body;
+        const data = { status: action };
+        const user = await bookingsCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: data }
+        );
+
+        if (user.matchedCount === 0) {
+          return res
+            .status(404)
+            .send({ success: false, message: "Booking not found." });
+        }
+
+        if (user.modifiedCount === 0) {
+          return res
+            .status(200)
+            .send({ success: true, message: "No changes were made." });
+        }
+
+        return res.status(200).send({
+          success: true,
+          message: "Booking status updated successfully.",
+        });
+      } catch (error) {
+        console.log(error);
+        res.status(500).send({ error: "Internal server error" });
+      }
+    });
+
+    app.get("/requested-bookings", verifyFirebase, async (req, res) => {
+      const { email } = req.user;
+      const userData = await usersCollection.findOne({ email });
+
+      if (userData.role !== "vendor") {
+        return res.status(403).send({
+          success: false,
+          message: "Only vendors are allowed to delete tickets.",
+        });
+      }
+
+      try {
+        const bookings = await bookingsCollection
+          .find({ vendorEmail: email })
+          .sort({ createdAt: -1 })
+          .toArray();
+        return res.status(200).send(bookings);
+      } catch (error) {
+        res.status(500).send({ error: "Internal server error" });
+      }
+    });
+
     app.post("/submit-booking", verifyFirebase, async (req, res) => {
       try {
         const { email } = req.user;
@@ -499,6 +587,7 @@ async function run() {
           pricePerUnit: ticket.pricePerUnit,
           departure: ticket.departure,
           email,
+          vendorEmail: ticket.email,
           ticketId,
           quantity,
           status: "pending",
@@ -514,7 +603,7 @@ async function run() {
       }
     });
 
-    app.post("/create-checkout-session", async (req, res) => {
+    app.post("/create-checkout-session", verifyFirebase, async (req, res) => {
       const { ticketId, bookingId } = req.body;
 
       const ticketData = await ticketsCollection.findOne({
@@ -544,8 +633,9 @@ async function run() {
           },
         ],
         metadata: {
-          ticketId: String(ticketId._id),
+          ticketId: String(ticketData._id),
           bookingId: String(bookingData._id),
+          quantity: bookingData.quantity,
         },
         mode: "payment",
         customer_email: bookingData.email,
@@ -556,7 +646,7 @@ async function run() {
       res.send({ url: session.url });
     });
 
-    app.patch("/payment-status", async (req, res) => {
+    app.patch("/payment-status", verifyFirebase, async (req, res) => {
       try {
         const { sessionId } = req.query;
 
@@ -570,8 +660,13 @@ async function run() {
             { _id: new ObjectId(session.metadata.bookingId) },
             update
           );
+          console.log(session.metadata);
 
           if (result.modifiedCount) {
+            await ticketsCollection.updateOne(
+              { _id: new ObjectId(session.metadata.ticketId) },
+              { $inc: { quantity: -parseInt(session.metadata.quantity) } }
+            );
             return res.send({
               success: true,
               message: "Payment successful",
