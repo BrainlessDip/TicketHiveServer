@@ -58,7 +58,6 @@ const verifyFirebase = async (req, res, next) => {
 
 async function run() {
   try {
-    await client.connect();
     const db = client.db("tickethive_db");
     const usersCollection = db.collection("users");
     const ticketsCollection = db.collection("tickets");
