@@ -134,6 +134,7 @@ async function run() {
           createdAt: new Date(),
           verificationStatus: "pending",
           advertiseStatus: "hide",
+          hideForFraud: false,
         };
 
         await ticketsCollection.insertOne(data);
@@ -225,7 +226,7 @@ async function run() {
     app.get("/advertise-tickets", async (req, res) => {
       try {
         const tickets = await ticketsCollection
-          .find({ advertiseStatus: "show" })
+          .find({ advertiseStatus: "show", hideForFraud: false })
           .sort({ createdAt: -1 })
           .toArray();
         return res.status(200).send(tickets);
@@ -248,7 +249,7 @@ async function run() {
 
       try {
         const tickets = await ticketsCollection
-          .find({ verificationStatus: "approved" })
+          .find({ verificationStatus: "approved", hideForFraud: false })
           .sort({ createdAt: -1 })
           .toArray();
         return res.status(200).send(tickets);
@@ -260,7 +261,7 @@ async function run() {
     app.get("/recent-tickets", async (req, res) => {
       try {
         const tickets = await ticketsCollection
-          .find({ verificationStatus: "approved" })
+          .find({ verificationStatus: "approved", hideForFraud: false })
           .sort({ createdAt: -1 })
           .limit(8)
           .toArray();
@@ -271,10 +272,24 @@ async function run() {
     });
 
     app.get("/all-tickets", async (req, res) => {
+      const { total = 0, page = 1 } = req.query;
+      const perPage = 6;
+
       try {
+        if (Number(total) === 1) {
+          const tickets = await ticketsCollection
+            .find({ verificationStatus: "approved", hideForFraud: false })
+            .toArray();
+          return res
+            .status(200)
+            .send({ totalPage: Math.ceil(tickets.length / perPage) });
+        }
+
         const tickets = await ticketsCollection
-          .find({ verificationStatus: "approved" })
-          .limit(8)
+          .find({ verificationStatus: "approved", hideForFraud: false })
+          .sort({ createdAt: -1 })
+          .limit(perPage)
+          .skip(Number(page - 1) * perPage)
           .toArray();
         return res.status(200).send(tickets);
       } catch (error) {
@@ -447,6 +462,7 @@ async function run() {
             message: "Only admins are allowed to edit any tickets.",
           });
         }
+
         const { id } = req.params;
         const { action } = req.body;
         const data = { role: action };
@@ -454,6 +470,20 @@ async function run() {
           { _id: new ObjectId(id) },
           { $set: data }
         );
+
+        if (action === "fraud") {
+          const user = await usersCollection.findOne({ _id: new ObjectId(id) });
+          await ticketsCollection.updateOne(
+            { email: user.email },
+            { $set: { hideForFraud: true } }
+          );
+        } else {
+          const user = await usersCollection.findOne({ _id: new ObjectId(id) });
+          await ticketsCollection.updateOne(
+            { email: user.email },
+            { $set: { hideForFraud: false } }
+          );
+        }
 
         if (user.matchedCount === 0) {
           return res
@@ -489,6 +519,7 @@ async function run() {
             message: "Only admins are allowed to edit any tickets.",
           });
         }
+
         const { id } = req.params;
         const { action } = req.body;
         const data = { verificationStatus: action };
