@@ -6,7 +6,7 @@ require("dotenv").config();
 const Stripe = require("stripe");
 const stripe = Stripe(process.env.STRIPE_KEY);
 const port = process.env.PORT || 3000;
-const YOUR_DOMAIN = "http://localhost:5173";
+const YOUR_DOMAIN = process.env.YOUR_DOMAIN || "http://localhost:5173";
 
 const decoded = Buffer.from(
   process.env.FIREBASE_SERVICE_KEY,
