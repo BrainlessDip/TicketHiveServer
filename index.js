@@ -472,13 +472,13 @@ async function run() {
 
         if (action === "fraud") {
           const user = await usersCollection.findOne({ _id: new ObjectId(id) });
-          await ticketsCollection.updateOne(
+          await ticketsCollection.updateMany(
             { email: user.email },
             { $set: { hideForFraud: true } }
           );
         } else {
           const user = await usersCollection.findOne({ _id: new ObjectId(id) });
-          await ticketsCollection.updateOne(
+          await ticketsCollection.updateMany(
             { email: user.email },
             { $set: { hideForFraud: false } }
           );
