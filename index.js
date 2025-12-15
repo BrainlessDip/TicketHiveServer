@@ -379,7 +379,7 @@ async function run() {
 
       try {
         const payments = await transactionsCollection
-          .find()
+          .find({ email })
           .sort({ createdAt: -1 })
           .toArray();
         return res.status(200).send(payments);
