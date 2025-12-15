@@ -772,6 +772,7 @@ async function run() {
           bookingId: String(bookingData._id),
           quantity: bookingData.quantity,
           title: ticketData.title,
+          email: req.user.email,
         },
         mode: "payment",
         customer_email: bookingData.email,
@@ -787,7 +788,6 @@ async function run() {
         const { sessionId } = req.query;
 
         const session = await stripe.checkout.sessions.retrieve(sessionId);
-        console.log(session);
         const isSuccess = session.payment_status === "paid";
 
         if (isSuccess) {
