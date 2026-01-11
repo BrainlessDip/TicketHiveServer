@@ -272,7 +272,7 @@ async function run() {
 
     app.get("/all-tickets", async (req, res) => {
       const { total = 0, page = 1 } = req.query;
-      const perPage = 6;
+      const perPage = 8;
 
       try {
         if (Number(total) === 1) {
@@ -549,7 +549,7 @@ async function run() {
       }
     });
 
-    app.get("/my-tickets/:id", verifyFirebase, async (req, res) => {
+    app.get("/my-tickets/:id", async (req, res) => {
       try {
         const { id } = req.params;
 
